@@ -1,0 +1,216 @@
+---
+title: "STAT3280_HW4"
+author: "Kaiwen Zhu(kz8pr), Yongyi Li(yl9gq), Xitong Huo(xh2kb)"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Q1
+```{r, echo=FALSE,message=FALSE}
+#this part is to print the pictures i created in word document
+library(magick)
+picture <- image_read('database.png')
+print(picture)
+
+```
+
+
+\newpage
+## Q2
+Insert all data into our database
+
+```{r, echo=TRUE, results="hide", message=FALSE}
+#install all packages we need
+library(igraph)
+library(stringr)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(RSQLite)
+
+#Data cleaning
+#Read data
+cite <- read.table("./statisticians/Data/paperCitAdj.txt", 
+                   stringsAsFactors = F)
+
+paper <- scan("./statisticians/Data/paperList.txt",sep="\n",what="")
+
+authors <- read.table("./statisticians/Data/authorList.txt",stringsAsFactors=FALSE)
+
+A2P <- read.table("./statisticians/Data/authorPaperBiadj.txt")
+
+tmp1 <- lapply(paper,function(s)unlist(strsplit(s,'"')))
+
+years_pre <- unlist(lapply(tmp1,function(x) return(trimws(x[5], 
+       which = c("both", "left", "right"), whitespace = "[ \t\r\n]"))))[2:3249]
+
+#get the DOI number(primary key)
+DOI_pre <- unlist(lapply(tmp1,function(x) return(trimws(x[4], 
+       which = c("both", "left", "right"), whitespace = "[ \t\r\n]"))))[2:3249]
+
+#get the title
+Title_pre <- unlist(lapply(tmp1,function(x) return(trimws(x[6], 
+      which = c("both", "left", "right"), whitespace = "[ \t\r\n]"))))[2:3249]
+
+Cited_count_pre <- unlist(lapply(tmp1,function(x) return(trimws(x[7], 
+      which = c("both", "left", "right"), whitespace = "[ \t\r\n]"))))[2:3249]
+
+#get the year
+years <- lapply(years_pre, function(x) return (as.numeric(unlist(strsplit(x, ","))[2])))
+
+#get the cited_count
+Cited_count <- lapply(Cited_count_pre, function(x) return (as.numeric(unlist(strsplit(x, ","))[2])))
+
+authors <- unlist(lapply(authors,function(x)gsub(" ","_",x)))
+A2P <- t(as.matrix(A2P))
+colnames(A2P) <- authors
+rownames(A2P) <- DOI_pre
+
+
+my_author_df <- melt(A2P)
+#dim(my_author_df)
+
+my_author_df <- subset(filter(my_author_df, value == 1), select = c('Var1', 'Var2'))
+publish_id <- seq(1,dim(my_author_df)[1], by=1)
+
+new_df <- my_author_df %>% separate(Var2, c("fname", "lname"), sep = "(_+)(?!.*_)")
+
+#head(my_author_df)
+#head(new_df)
+#dim(new_df)
+
+#get the list of co_author
+co_author <- aggregate(my_author_df[,-1], list(my_author_df[,1]), paste,collapse=', ')
+
+reference_matrix <- t(as.matrix(cite))
+
+colnames(reference_matrix) <- DOI_pre
+rownames(reference_matrix) <- DOI_pre
+
+reference_df <- melt(reference_matrix)
+reference_df <- subset(filter(reference_df, value == 1), select = c('Var1', 'Var2'))
+reference_id <- seq(1, dim(reference_df)[1], by=1)
+
+
+#get the list of references for each paper
+reference <- aggregate(reference_df[,-1], list(reference_df[,1]), paste,collapse=', ')
+
+#Create the R SQL command
+
+db = dbConnect(SQLite(), dbname = "MYSQL.sqlite")
+#dbSendQuery(conn = db, "DROP TABLE person")
+#dbSendQuery(conn = db, "DROP TABLE reference")
+
+#First table
+first_table <- tibble(publish_id,new_df$fname,new_df$lname
+                      ,new_df$Var1)
+first_table <- setNames(first_table, c("publish_id", "First_name",
+                                       "Last_name", "DOI"))
+
+dbSendQuery(db, "CREATE TABLE paper(
+                  DOI VARCHAR(50),
+                  Year DATE,
+                  Title VARCHAR(80),
+                  Cited_count SMALLINT,
+                  CONSTRAINT pk_paper PRIMARY KEY(DOI))")
+
+dbSendQuery(db, "CREATE TABLE person(
+                  publish_id SMALLINT UNSIGNED,
+                  First_name VARCHAR(20),
+                  Last_name VARCHAR(20),
+                  DOI VARCHAR(50),
+                  CONSTRAINT pk_person PRIMARY KEY(publish_id),
+                  CONSTRAINT fk_person FOREIGN KEY(DOI)
+                      REFERENCES paper(DOI))")
+
+dbSendQuery(db, "CREATE TABLE reference(
+                  Reference_id SMALLINT UNSIGNED,
+                  DOI VARCHAR(50),
+                  Refer_DOI VARCHAR(50),
+                  CONSTRAINT pk_reference PRIMARY KEY(Reference_id),
+                  CONSTRAINT fk_reference FOREIGN KEY(DOI)
+                      REFERENCES paper(DOI))")
+
+#Write first table
+dbWriteTable(db, "person", first_table,append=TRUE, row.names=FALSE)
+#check the name and fields
+#dbListTables(db)
+#dbListFields(db, "person")
+
+#create the second table
+second_table <- tibble(DOI_pre, as.numeric(years),Title_pre, as.numeric(Cited_count))
+second_table <- setNames(second_table, c("DOI", "Year", "Title", "Cited_count"))
+
+dbWriteTable(db, "paper", second_table,append=TRUE, row.names=FALSE)
+#check names and fields
+#dbListTables(db)
+dbListFields(db, "paper")
+
+#create the third table
+third_table <- tibble(reference_id, reference_df$Var1, reference_df$Var2)
+third_table <- setNames(third_table, c("Reference_id", "DOI", "Refer_DOI"))
+
+dbWriteTable(db, "reference", third_table,append=TRUE, row.names=FALSE)
+#check names and fields
+#dbListTables(db)
+#dbListFields(db, "reference")
+```
+
+\newpage
+## Q3 
+
+Here is th list of author(or co-author) who have ever
+published papers with at least four of the following DOI substrings (“10.1214”,“10.1093”,“10.1046”,“10.1111”,“10.1080”,“10.1198”). 
+
+```{r pressure, echo=TRUE}
+#Create the database query
+query <- dbSendQuery(db, "SELECT First_name, Last_name, COUNT(*)
+                          FROM person
+                          WHERE (DOI LIKE '%10.1214%')
+                          OR (DOI LIKE '%10.1093%')
+                          OR (DOI LIKE '%10.1046%')
+                          OR (DOI LIKE '%10.1111%')
+                          OR (DOI LIKE '%10.1080%')
+                          OR (DOI LIKE '%10.1198%')
+                          GROUP BY DOI
+                          HAVING COUNT(*) >= 4
+                     ")
+
+result <- dbFetch(query)
+#print the result
+result
+```
+
+
+\newpage
+## Q4
+
+Here is the research we did:
+```{r, echo=TRUE,results="hide", message=FALSE}
+#create the database query
+query2 <- dbSendQuery(db, "SELECT Refer_DOI, COUNT(*)
+                            FROM reference
+                            WHERE Refer_DOI IN (
+                            SELECT DOI FROM paper WHERE Year < 2010
+                            )
+                            GROUP BY Refer_DOI
+                            ")
+
+result2 <- dbFetch(query2,n=-1)
+result2<- setNames(result2, c("DOI", "Citation_Number"))
+
+library(ggplot2)
+ggplot(result2) + geom_histogram(aes(x = Citation_Number), na.rm = TRUE)           +scale_x_log10()+scale_y_log10() + ggtitle(label = "The log-frequency vs. The log-citation. ") + xlab("Log-citation") + ylab("Log-frequency")
+
+```
+As we can see, after we plot the log-frequency vs. the log-citation, there exists a strong linear relationship between Log-frequency and log-citation. It means that the popularity of an interacting system tend to be scale-free or following a power-law distribution. So, we verify the pattern in the citation system.
+
+
+
+
+
+

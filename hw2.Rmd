@@ -1,0 +1,370 @@
+---
+title: "Hw2"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1
+
+```{r echo=FALSE, results="hide", fig1, fig.height = 8, fig.width = 7, warning=FALSE,message=FALSE}
+library(gridExtra)
+library(ggplot2)
+library(reshape)
+library(dplyr)
+library(maps)
+library(viridis)
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("sf")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+###load data
+ele <- read.table("./NASA/Files/elevation.dat",header=TRUE)
+Lon <- colnames(ele)
+Lon <- unlist(lapply(Lon,function(x)gsub("X.","",x)))
+names(ele) <- Lon
+
+ele.Lon <- as.numeric(Lon)
+ele.Lat <- as.numeric(rownames(ele))
+
+metric.Lon <- scan("./NASA/Files/Lon.txt",what="",sep="\t")
+metric.Lon <- unlist(lapply(metric.Lon,function(x) gsub("W","",x)))
+metric.Lon <- as.numeric(metric.Lon)
+
+metric.Lat <- scan("./NASA/Files/Lat.txt",what="",sep="\n")
+metric.Lat <- unlist(lapply(metric.Lat,function(x){
+  x <- gsub("N","",x)
+  x <- gsub("S","",x)
+})                            )
+metric.Lat <- as.numeric(metric.Lat)
+metric.Lat[16:24] <- -metric.Lat[16:24]
+
+
+## average for each month
+ozone.month.mean <- data.frame(Lat = rep(metric.Lat,24), 
+                               Lon = rep(metric.Lon,each = 24))
+
+
+## mean of each month
+for(yy in 1:12){
+  tmp <- NULL
+  for(t in seq(yy,72,12)){
+    ozone <- read.table(paste("./NASA/Files/ozone",t,".txt",sep=""),header=FALSE,skip=7,na.strings="....")
+    tmp <- cbind(tmp,as.vector(as.matrix(ozone[,-(1:3)])))
+  }
+  ozone.month.mean[[yy+2]] <- apply(tmp,1,mean)
+}
+names(ozone.month.mean)[3:14] <- c("Jan", "Feb", "Mar", "Apr", "May", "June", 
+                                   "July", "Aug", "Sept", "Oct", "Nov", "Dec")
+
+df1 <- melt(ozone.month.mean, id=c("Lat", "Lon"))
+names(df1)[4] <- "OzoneAbundance"
+df1$Lon <- -df1$Lon
+
+US <- map_data("world")
+US <- US[US$region=="USA",]
+
+p1 <- ggplot(data = world) +
+  geom_sf()+
+  geom_point(dat = df1, aes(x = Lon, y = Lat, alpha = OzoneAbundance, color = OzoneAbundance, size=OzoneAbundance)) +
+  ylim(c(-20,37))+
+  scale_alpha_continuous(name="OzoneAbundance", range=c(0.1,0.5)) + 
+  scale_size_continuous(name="OzoneAbundance", range=c(1,8)) +
+  scale_fill_gradient(low = "white",high = "black") +
+  facet_wrap(~variable) +
+  ggtitle("Ozone month average")+
+  theme(axis.text.x = element_text(angle = 90))+
+  coord_sf( c(-56, -114))
+   # geom_polygon(data = US, aes(x=long, y = lat, group = group), fill="black", alpha=0.5)  +
+# scale_color_viridis() +
+
+  
+  # geom_point( dat = df1, aes(x=Lon, y=Lat, size=OzoneAbundance,alpha = OzoneAbundance), shape=20, stroke=FALSE) 
+  #   scale_size_continuous(name="Population (in M)", trans="log", range=c(1,12), breaks=mybreaks) +
+  #   scale_alpha_continuous(name="Population (in M)", trans="log", range=c(0.1, .9), breaks=mybreaks) +
+  #   scale_color_viridis(option="magma", trans="log", breaks=mybreaks, name="Population (in M)" )
+
+# p1 <- ggplot(df1, aes(x = Lon, y = Lat)) + 
+#   facet_wrap(~variable) + 
+#   geom_tile(aes(fill = OzoneAbundance), colour = "white")  + 
+#   scale_fill_gradient(low = "white",high = "black") + 
+#   ggtitle("Ozone month average")
+# 
+
+## average for each year
+ozone.year.mean <- data.frame(Lat = rep(metric.Lat,24), 
+                               Lon = rep(metric.Lon,each = 24))
+## mean of each year
+for(yy in 1:6){
+  tmp <- NULL
+  for(t in ((yy-1)*12+1):((yy-1)*12+12)) {
+    ozone <- read.table(paste("./NASA/Files/ozone",t,".txt",sep=""),header=FALSE,skip=7,na.strings="....")
+    tmp <- cbind(tmp,as.vector(as.matrix(ozone[,-(1:3)])))
+  }
+  ozone.year.mean[[yy+2]] <- apply(tmp,1,mean)
+}
+names(ozone.year.mean)[3:8] <- 1995:2000
+
+df2 <- melt(ozone.year.mean, id=c("Lat", "Lon"))
+df2$Lon <- -df2$Lon
+names(df2)[4] <- "OzoneAbundance"
+# p2 <- ggplot(df2, aes(x = Lon, y = Lat)) + 
+#   facet_wrap(~variable) + 
+#   geom_tile(aes(fill = OzoneAbundance), colour = "white")  + 
+#   scale_fill_gradient(low = "white",high = "black") 
+
+p2 <- ggplot(data = world) +
+  geom_sf()+
+  geom_point(dat = df2, aes(x = Lon, y = Lat, alpha = OzoneAbundance, color = OzoneAbundance, size=OzoneAbundance)) +
+  ylim(c(-20,37))+
+  scale_alpha_continuous(name="OzoneAbundance", range=c(0.1,0.5)) + 
+  scale_size_continuous(name="OzoneAbundance", range=c(1,8)) +
+  scale_fill_gradient(low = "white",high = "black") +
+  ggtitle("Yearly trend of the Ozone")+
+  facet_wrap(~variable) +
+  theme(axis.text.x = element_text(angle = 90))+
+  coord_sf( c(-56, -114))
+
+
+#pdf("q1.pdf", paper="a4")
+
+#dev.off()
+
+```
+
+\newpage
+## 2
+```{r echo=FALSE, results="hide"}
+dat <- read.csv("./Diving2000.csv") # read data
+diver_uni <- unique(dat$diver) # all divers
+n_diver <- length(diver_uni) #no. of divers
+judge_uni <- unique(dat$judge) # all judges
+n_judge <- length(judge_uni) #no. of judges
+c_diver <- c_judge <- vector()
+adj <-  matrix(0, n_diver, n_judge)
+
+for(i in 1:n_diver) {
+  tmp <- dat[dat$diver==diver_uni[i],"dcountry"]
+  c_diver[i] <- as.character(tmp[1])
+}
+
+for(i in 1:n_judge) {
+  tmp <- dat[dat$judge==judge_uni[i],"jcountry"]
+  c_judge[i] <- as.character(tmp[1])
+}
+
+AND1 <- function (...)  Reduce("&", list(...))
+
+for(i in 1:n_diver) {
+  for(j in 1:n_judge) {
+    idx <- AND1(dat$diver==diver_uni[i], dat$judge == judge_uni[j]) # index
+    if(sum(idx)>0) adj[i,j] <- mean(dat[idx,"score"]) # mean score
+  }
+}
+
+highscore <- matrix(0, n_diver, n_judge)
+highscore[adj>quantile(adj,0.9)]<- 1
+same_c <-  matrix(0, n_diver, n_judge)
+for(i in 1:n_diver) {
+  for(j in 1:n_judge) {
+    idx <- AND1(dat$diver==diver_uni[i], dat$judge == judge_uni[j]) # index
+    tmp1 <- dat[idx,"dcountry"]
+    tmp2 <- dat[idx,"jcountry"]
+    if(sum(idx)>0) same_c[i,j] <- tmp1[1]==tmp2[1]# mean score
+  }
+}
+
+
+
+heat.df <- as.data.frame(highscore*same_c)
+names(heat.df) <- make.unique(c_judge)
+row.names(heat.df) <- make.unique(c_diver)
+heatmap(as.matrix(heat.df))
+#Highscores (score>7.9) + the diver and the judge are from the same country
+
+```
+
+The red part indicates the highscores (score>7.5, the 90\% quantile of the scores) as well as the diver and judge are from the same country to visulize the bias.
+It is easy to see that the judges tend to be biased towards divers from their own countries, especially in USA, China, Russia, Canada, and UK. The highest scores of the diver often come from the judges from the same country. 
+
+\newpage
+## Appendix
+```{r eval=F}
+library(gridExtra)
+library(ggplot2)
+library(reshape)
+library(dplyr)
+library(maps)
+library(viridis)
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("sf")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+###load data
+ele <- read.table("./NASA/Files/elevation.dat",header=TRUE)
+Lon <- colnames(ele)
+Lon <- unlist(lapply(Lon,function(x)gsub("X.","",x)))
+names(ele) <- Lon
+
+ele.Lon <- as.numeric(Lon)
+ele.Lat <- as.numeric(rownames(ele))
+
+metric.Lon <- scan("./NASA/Files/Lon.txt",what="",sep="\t")
+metric.Lon <- unlist(lapply(metric.Lon,function(x) gsub("W","",x)))
+metric.Lon <- as.numeric(metric.Lon)
+
+metric.Lat <- scan("./NASA/Files/Lat.txt",what="",sep="\n")
+metric.Lat <- unlist(lapply(metric.Lat,function(x){
+  x <- gsub("N","",x)
+  x <- gsub("S","",x)
+})                            )
+metric.Lat <- as.numeric(metric.Lat)
+metric.Lat[16:24] <- -metric.Lat[16:24]
+
+
+## average for each month
+ozone.month.mean <- data.frame(Lat = rep(metric.Lat,24), 
+                               Lon = rep(metric.Lon,each = 24))
+
+
+## mean of each month
+for(yy in 1:12){
+  tmp <- NULL
+  for(t in seq(yy,72,12)){
+    ozone <- read.table(paste("./NASA/Files/ozone",t,".txt",sep=""),header=FALSE,skip=7,na.strings="....")
+    tmp <- cbind(tmp,as.vector(as.matrix(ozone[,-(1:3)])))
+  }
+  ozone.month.mean[[yy+2]] <- apply(tmp,1,mean)
+}
+names(ozone.month.mean)[3:14] <- c("Jan", "Feb", "Mar", "Apr", "May", "June", 
+                                   "July", "Aug", "Sept", "Oct", "Nov", "Dec")
+
+df1 <- melt(ozone.month.mean, id=c("Lat", "Lon"))
+names(df1)[4] <- "OzoneAbundance"
+df1$Lon <- -df1$Lon
+
+US <- map_data("world")
+US <- US[US$region=="USA",]
+
+p1 <- ggplot(data = world) +
+  geom_sf()+
+  geom_point(dat = df1, aes(x = Lon, y = Lat, alpha = OzoneAbundance, color = OzoneAbundance, size=OzoneAbundance)) +
+  ylim(c(-20,37))+
+  scale_alpha_continuous(name="OzoneAbundance", range=c(0.1,0.5)) + 
+  scale_size_continuous(name="OzoneAbundance", range=c(1,8)) +
+  scale_fill_gradient(low = "white",high = "black") +
+  facet_wrap(~variable) +
+  ggtitle("Ozone month average")+
+  theme(axis.text.x = element_text(angle = 90))+
+  coord_sf( c(-56, -114))
+   # geom_polygon(data = US, aes(x=long, y = lat, group = group), fill="black", alpha=0.5)  +
+# scale_color_viridis() +
+
+  
+  # geom_point( dat = df1, aes(x=Lon, y=Lat, size=OzoneAbundance,alpha = OzoneAbundance), shape=20, stroke=FALSE) 
+  #   scale_size_continuous(name="Population (in M)", trans="log", range=c(1,12), breaks=mybreaks) +
+  #   scale_alpha_continuous(name="Population (in M)", trans="log", range=c(0.1, .9), breaks=mybreaks) +
+  #   scale_color_viridis(option="magma", trans="log", breaks=mybreaks, name="Population (in M)" )
+
+# p1 <- ggplot(df1, aes(x = Lon, y = Lat)) + 
+#   facet_wrap(~variable) + 
+#   geom_tile(aes(fill = OzoneAbundance), colour = "white")  + 
+#   scale_fill_gradient(low = "white",high = "black") + 
+#   ggtitle("Ozone month average")
+# 
+
+## average for each year
+ozone.year.mean <- data.frame(Lat = rep(metric.Lat,24), 
+                               Lon = rep(metric.Lon,each = 24))
+## mean of each year
+for(yy in 1:6){
+  tmp <- NULL
+  for(t in ((yy-1)*12+1):((yy-1)*12+12)) {
+    ozone <- read.table(paste("./NASA/Files/ozone",t,".txt",sep=""),header=FALSE,skip=7,na.strings="....")
+    tmp <- cbind(tmp,as.vector(as.matrix(ozone[,-(1:3)])))
+  }
+  ozone.year.mean[[yy+2]] <- apply(tmp,1,mean)
+}
+names(ozone.year.mean)[3:8] <- 1995:2000
+
+df2 <- melt(ozone.year.mean, id=c("Lat", "Lon"))
+df2$Lon <- -df2$Lon
+names(df2)[4] <- "OzoneAbundance"
+# p2 <- ggplot(df2, aes(x = Lon, y = Lat)) + 
+#   facet_wrap(~variable) + 
+#   geom_tile(aes(fill = OzoneAbundance), colour = "white")  + 
+#   scale_fill_gradient(low = "white",high = "black") 
+
+p2 <- ggplot(data = world) +
+  geom_sf()+
+  geom_point(dat = df2, aes(x = Lon, y = Lat, alpha = OzoneAbundance, color = OzoneAbundance, size=OzoneAbundance)) +
+  ylim(c(-20,37))+
+  scale_alpha_continuous(name="OzoneAbundance", range=c(0.1,0.5)) + 
+  scale_size_continuous(name="OzoneAbundance", range=c(1,8)) +
+  scale_fill_gradient(low = "white",high = "black") +
+  ggtitle("Yearly trend of the Ozone")+
+  facet_wrap(~variable) +
+  theme(axis.text.x = element_text(angle = 90))+
+  coord_sf( c(-56, -114))
+
+
+#pdf("q1.pdf", paper="a4")
+grid.arrange(p1, p2, nrow=2)
+#dev.off()
+
+
+dat <- read.csv("./Diving2000.csv") # read data
+diver_uni <- unique(dat$diver) # all divers
+n_diver <- length(diver_uni) #no. of divers
+judge_uni <- unique(dat$judge) # all judges
+n_judge <- length(judge_uni) #no. of judges
+c_diver <- c_judge <- vector()
+adj <-  matrix(0, n_diver, n_judge)
+
+for(i in 1:n_diver) {
+  tmp <- dat[dat$diver==diver_uni[i],"dcountry"]
+  c_diver[i] <- as.character(tmp[1])
+}
+
+for(i in 1:n_judge) {
+  tmp <- dat[dat$judge==judge_uni[i],"jcountry"]
+  c_judge[i] <- as.character(tmp[1])
+}
+
+AND1 <- function (...)  Reduce("&", list(...))
+
+for(i in 1:n_diver) {
+  for(j in 1:n_judge) {
+    idx <- AND1(dat$diver==diver_uni[i], dat$judge == judge_uni[j]) # index
+    if(sum(idx)>0) adj[i,j] <- mean(dat[idx,"score"]) # mean score
+  }
+}
+
+highscore <- matrix(0, n_diver, n_judge)
+highscore[adj>quantile(adj,0.9)]<- 1
+same_c <-  matrix(0, n_diver, n_judge)
+for(i in 1:n_diver) {
+  for(j in 1:n_judge) {
+    idx <- AND1(dat$diver==diver_uni[i], dat$judge == judge_uni[j]) # index
+    tmp1 <- dat[idx,"dcountry"]
+    tmp2 <- dat[idx,"jcountry"]
+    if(sum(idx)>0) same_c[i,j] <- tmp1[1]==tmp2[1]# mean score
+  }
+}
+
+
+
+heat.df <- as.data.frame(highscore*same_c)
+names(heat.df) <- make.unique(c_judge)
+row.names(heat.df) <- make.unique(c_diver)
+heatmap(as.matrix(heat.df))
+#Highscores (score>7.5) + the diver and the judge are from the same country
+
+```
+

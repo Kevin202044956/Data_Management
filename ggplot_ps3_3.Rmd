@@ -1,0 +1,236 @@
+---
+title: "ggplot_ps3 q3"
+output: 
+  pdf_document:
+    keep_tex:  true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, results="hide")
+```
+## 1 and 2
+```{r}
+confirmed_world <- read.csv("./COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv",stringsAsFactors = FALSE,check.names =  FALSE)
+library(reshape2)
+confirmed_world <- reshape2::melt(confirmed_world, id.vars = c("Province/State", "Country/Region", "Lat", "Long"), variable.name = "Date", value.name = "Confirmed")
+
+
+##### load death counts and recovered counts
+death_world <- read.csv("./COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv",stringsAsFactors = FALSE,check.names =  FALSE)
+
+recovered_world <- read.csv("./COVID-19/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv",stringsAsFactors = FALSE, check.names =  FALSE)
+
+
+death_world <- reshape2::melt(death_world, id.vars = c("Province/State", "Country/Region", "Lat", "Long"), variable.name = "Date", value.name = "Death")
+
+recovered_world <- reshape2::melt(recovered_world, id.vars = c("Province/State", "Country/Region", "Lat", "Long"), variable.name = "Date", value.name = "Recovered")
+
+world_history_data <- dplyr::left_join(confirmed_world, death_world, by = c("Province/State", "Country/Region", "Lat", "Long", "Date"))
+
+
+world_history_data <- dplyr::left_join(world_history_data, recovered_world, by = c("Province/State", "Country/Region", "Lat", "Long", "Date"))
+
+
+
+world_history_data$Date <- as.Date(as.character(world_history_data$Date), format = c("%m/%d/%y"))
+
+
+
+colnames(world_history_data) <- make.names(colnames(world_history_data))
+
+
+library(RColorBrewer)
+
+cols <- matrix(c(brewer.pal(9,"Set1"),brewer.pal(11,"Set3")),ncol=1)
+
+library(plyr)
+
+world.summary.data <- ddply(world_history_data,.(Country.Region, Date),function(x){
+    colSums(x[,c("Confirmed","Death","Recovered")])
+})
+
+lastday <- max(world.summary.data$Date)
+
+
+world.summary.data <- world.summary.data[world.summary.data$Date<=lastday,]
+
+yesterday.data <- world.summary.data[world.summary.data$Date==lastday,]
+
+
+sort.index <- sort(yesterday.data$Confirmed,decreasing=TRUE,index.return=TRUE)$ix
+
+yesterday.data.major  <- yesterday.data[sort.index[1:20],]
+
+yesterday.data.major  <- data.frame(Country.Region=yesterday.data$Country.Region[sort.index[1:20]])
+
+yesterday.data.major$Country.Region  <- as.character(yesterday.data.major$Country.Region )
+
+
+major.summary.data <- dplyr::inner_join(world.summary.data,yesterday.data.major,by = "Country.Region")
+
+
+rownames(cols) <- unique(major.summary.data$Country.Region)
+
+
+major.summary.data$Country.Region <- factor(major.summary.data$Country.Region,
+    levels = rev(yesterday.data.major$Country.Region))
+
+
+library(ggplot2)
+
+# ggplot(major.summary.data[major.summary.data$Date==lastday,], aes(x = Country.Region, y = Confirmed, fill = Country.Region)) +
+#     geom_col() + scale_fill_manual(values = cols) + theme_minimal() +
+#     ylab("Confirmed") + xlab("") + labs(color = "Country/Region") + coord_flip() +
+#     theme(text = element_text(size = 12), axis.text.x = element_text(angle = 90),
+#         legend.position = "none")
+# 
+
+
+library(wbstats)
+
+uni.country <- as.character(unique(major.summary.data$Country.Region))
+pop_data <- wb(indicator = "SP.POP.TOTL",startdate = 2018, enddate = 2018)
+
+pop_data$country[which(pop_data$country=="Korea, Rep.")] = "Korea, South"
+pop_data$country[which(pop_data$country=="United States")] = "US"
+pop_data$country[which(pop_data$country=="Iran, Islamic Rep." )] = "Iran" 
+pop_data <- cbind(pop_data$value, pop_data$country)
+
+pop_data <- pop_data[which(pop_data[,2] %in% uni.country),]
+pop_data <- as.data.frame(pop_data)
+names(pop_data) <- c("Population", "Country.Region")
+pop_data$Population <- as.numeric(as.character(pop_data$Population))
+pop_data$Country.Region <- as.character(pop_data$Country.Region)
+
+major.summary.data <- merge(x=major.summary.data,y=pop_data,by="Country.Region",all.x=TRUE)
+major.summary.data$Con.pm <- major.summary.data$Confirmed/(major.summary.data$Population/1000000)
+
+# ggplot(major.summary.data[major.summary.data$Date==lastday,], aes(x = Country.Region, y = Con.pm, fill = Country.Region)) +
+#     geom_col() + scale_fill_manual(values = cols) + theme_minimal() +
+#     ylab("Confirmed Per Million") + xlab("") + labs(color = "Country/Region") + coord_flip() +
+#     theme(text = element_text(size = 12), axis.text.x = element_text(angle = 90),
+#         legend.position = "none")
+
+```
+
+```{r fig11, fig.height=2,fig.width= 9}
+par(mfrow = c(1,3))
+major.summary.data$Rec.pm <- major.summary.data$Recovered/(major.summary.data$Population/1000000)
+major.summary.data$death.pm <- major.summary.data$Death/(major.summary.data$Population/1000000)
+major.summary.data$case.pm <- major.summary.data$Death/(major.summary.data$Population/1000000)
+major.summary.data$ratio <- major.summary.data$Death/major.summary.data$Recovered
+unique(major.summary.data$Country.Region)
+
+ggplot(major.summary.data,
+    aes(x = Date, y = case.pm, col = Country.Region)) + geom_line(lwd = 0.5) + geom_point(size = 1) +
+    scale_color_manual(values = cols) + theme_minimal() + ylab("Confirmed cases Per Million") +
+    xlab("") + labs(color = "Country/Region") + scale_x_date(date_labels = "%m-%d",
+    date_breaks = "2 day") + theme(text = element_text(size = 3, face = "bold"),
+    axis.text.x = element_text(angle = 90), legend.position = "right")
+
+ggplot(major.summary.data,
+    aes(x = Date, y = ratio, col = Country.Region)) + geom_line(lwd = 0.5) + geom_point(size = 1) +
+    scale_color_manual(values = cols) + theme_minimal() + ylab("The ratio between death and recovered") +
+    xlab("") + labs(color = "Country/Region") + scale_x_date(date_labels = "%m-%d",
+    date_breaks = "2 day") + theme(text = element_text(size = 3, face = "bold"),
+    axis.text.x = element_text(angle = 90), legend.position = "right")
+
+```
+
+### 4
+```{r fig14, fig.height =1.5, fig.width=3}
+ world_history_data[world_history_data$Date<=lastday,]
+US.data <- world_history_data[world_history_data$Country.Region=="US",]
+Italy.data <- world_history_data[world_history_data$Country.Region=="Italy",]
+Italy.data$diff <- c(diff(Italy.data$Confirmed),diff(Italy.data$Confirmed)[80])
+US.data$diff <- c(diff(US.data$Confirmed),diff(US.data$Confirmed)[80])
+
+
+par(mfrow = c(1,2))
+ggplot(US.data[US.data$Date > "2020-02-20", ], aes(x = Date,
+    y = diff, col = Province.State)) + geom_line(lwd = 0.7) + geom_point(size = 1)  + ylab("Increasing cases") + xlab("") + labs(color = "States and Territories") +
+    scale_x_date(date_labels = "%m-%d", date_breaks = "2 day") + theme_minimal() +
+    theme(text = element_text(size = 3, face = "bold"), axis.text.x = element_text(angle = 90),
+          legend.position = "none") + ggtitle("US") + geom_smooth(
+            colour = "lightblue", se = FALSE
+          )
+          
+ggplot(Italy.data[Italy.data$Date > "2020-02-20", ], aes(x = Date,
+    y = diff, col = Province.State)) + geom_line(lwd = 0.7) + geom_point(size = 1)  + ylab("Increasing cases") + xlab("") + labs(color = "States and Territories") +
+    scale_x_date(date_labels = "%m-%d", date_breaks = "2 day") + theme_minimal() +
+    theme(text = element_text(size = 3, face = "bold"), axis.text.x = element_text(angle = 90),
+          legend.position = "none") + ggtitle("Italy") + geom_smooth(
+            colour = "lightblue", se = FALSE
+          )
+
+```
+
+```{r,fig16, fig.height = 2}
+par(mfrow = c(1,3))
+world_history_data[world_history_data$Date == "2020-04-08", "Confirmed"]
+plot(density(log(world_history_data[world_history_data$Date == "2020-04-08", "Confirmed"]), na.rm = TRUE),
+     main = "", xlab = "log confirmed")
+abline(v = log(US.data[US.data$Date == "2020-04-08", "Confirmed"]), col =2)
+
+plot(density(log(world_history_data[world_history_data$Date == "2020-04-08", "Death"]), na.rm = TRUE),
+     main = "", xlab = "log death")
+abline(v = log(US.data[US.data$Date == "2020-04-08", "Death"]), col =2)
+
+plot(density(log(world_history_data[world_history_data$Date == "2020-04-08", "Recovered"]), na.rm = TRUE),
+     main = "", xlab = "log recovered")
+abline(v = log(US.data[US.data$Date == "2020-04-08", "Recovered"]), col =2)
+```
+
+```{r, fig.height=2.8}
+
+major.summary.data$active_case <- major.summary.data$Confirmed - major.summary.data$Recovered - major.summary.data$Death
+major.summary.data$cut <- ifelse((major.summary.data$Recovered > major.summary.data$active_case)&(major.summary.data$Confirmed>100), 1,0)
+library(dplyr)
+library(ggplot2)
+cut_point_country <- droplevels(
+unique(major.summary.data[major.summary.data$cut == 1,]$Country.Region))
+my_country <- levels(cut_point_country)
+new_data <- major.summary.data[major.summary.data$Confirmed > 50,]
+cut_point_data <- c()
+for (country in my_country){
+  index <- -as.numeric(difftime(
+    sort(new_data[new_data$Country.Region == country,]$Date)[1],
+    sort(major.summary.data[(major.summary.data$cut == 1)&(major.summary.data$Country.Region == country),]$Date)[1]))
+  cut_point_data <- c(cut_point_data,index)
+}
+
+par(mfrow = c(1,2))
+my_plot<-barplot(cut_point_data, las = 1,
+        main = "The days to cut-off point (days)",cex.main = 0.7,
+        names.arg = c("Korea","Switzerland","Iran", "China"),cex.names=0.5, cex.axis = 0.5,
+        col = 'lightblue')
+
+text(my_plot,c(37,39,45,38),c(37,39,45,38), cex = 1, pos=1)
+
+US.data$ratio <- US.data$Death/US.data$Confirmed
+Italy.data$ratio <- Italy.data$Death/Italy.data$Confirmed
+
+plot(x = Italy.data$Date[30:81], y = Italy.data$ratio[30:81], ylab = 'Death ratio' ,xlab = 'date',type = 'l',col = 'red',lwd = 1, main = 'Daeath rate',cex.main = 0.7)
+lines(x=US.data$Date[30:81], y = US.data$ratio[30:81],col = 'blue',lwd = 1 )
+legend("topleft", c("Italy", "US"), pch=1,col=c('red','blue'),cex = 0.7,
+       text.col = c('red','blue'))
+```
+```{r,fig.height=4.1}
+
+library(maps)
+map("world", col="grey", fill=TRUE, lwd=0.1)
+map.data <- world_history_data[world_history_data$Date == "2020-04-10", ]
+points(x=map.data$Long, y=map.data$Lat, pch=16, col = rgb(red = 0, green = 0, blue = 1, alpha = 0.3), bg="red", cex = log(map.data$Confirmed/500),lwd=2)
+points(x=map.data$Long, y=map.data$Lat, pch=16, col = rgb(red = 1, green = 0, blue = 0, alpha = 0.5), bg="red", cex = log(map.data$Death/500),lwd=2)
+legend( "bottomleft"
+         , inset = c(0,0.3) 
+         , cex = 0.7
+         , bty = "n"
+         , legend = c("Death", "Confirmed")
+         , text.col = c(rgb(red = 1, green = 0, blue = 0, alpha = 0.7), rgb(red = 0, green = 0, blue = 1, alpha = 0.7))
+         , pt.bg = c(rgb(red = 1, green = 0, blue = 0, alpha = 0.7), rgb(red = 0, green = 0, blue = 1, alpha = 0.7))
+         , pch = c(21,21)
+)
+```
+The pandemic patterns over different region are shown very similar. According to the curves by US and other cpuntries, before the epidemic reaching to peak, the number of deaths increases exponentially.Compared with Italy, the United States is in the middle of the outbreak. Although the number of new daily cases continues to increase, it has slowed down considerably from the earlier exponential increase.At the same time, because the medical infrastructure in the United States is relatively developed, it is obvious that the death rate in the United States is lower than that in Italy during the same period.Judging from the current form, a large-scale blockade is not necessary, but we should not relax our vigilance in areas with severe epidemics. According to the number of confirmed cases, the confirmed cases in US at at the right tails in the distribution (the red solid line) of the confirmed cases around the world. Therefore,  the corresponding cases per million perople should also be higher than the majority of the other countires.According the geographical distribution of confirmed cases around the world, Europe countries shows more series sitatution than US due to their geographical and population distribution characters. The openflight dataset provide helpful information that restrict the international travel flow between countries is able to reduce the speed of spread and increaments of the cinfimred cases.
+  
